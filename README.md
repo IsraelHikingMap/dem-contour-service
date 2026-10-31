@@ -19,6 +19,7 @@ It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs)
 |---|---|
 | `GET /{z}/{x}/{y}` | Contour MVT in meters. `{y}` may end with `.pbf` or `.mvt`. |
 | `GET /{z}/{x}/{y}?units=imperial` | Contour MVT in feet. |
+| `GET /tilejson.json` | TileJSON 3.0.0 for the metric tiles, zoom 11-16, tiles at `{PUBLIC_URL}/{z}/{x}/{y}.mvt`. |
 | `GET /health` | `ok` |
 
 - Tiles below zoom 11 are empty.
@@ -33,6 +34,8 @@ It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs)
 | `PORT` | `8080` |
 | `DEM_URL_PATTERN` | `https://mapeak.com/vector/data/raster-dem/{z}/{x}/{y}.webp` |
 | `DEM_CACHE_SIZE` | `64` decoded DEM tiles, shared by both unit systems |
+| `PUBLIC_URL` | `http://localhost:{PORT}`, the external base URL of the tiles in the TileJSON |
+| `ATTRIBUTION` | `<a href='https://mapterhorn.com/attribution'>© Mapterhorn</a>` |
 
 ## Running
 
@@ -59,8 +62,7 @@ As a MapLibre vector source:
 ```json
 {
   "type": "vector",
-  "tiles": ["http://localhost:8080/{z}/{x}/{y}"],
-  "maxzoom": 16
+  "url": "http://localhost:8080/tilejson.json"
 }
 ```
 
