@@ -1,0 +1,80 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Run tests
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: dem-contour-service:ci
+          cache-from: type=gha
+
+      - name: Smoke test image
+        run: |
+          docker run -d --name dcs -p 8080:8080 dem-contour-service:ci
+          for i in $(seq 30); do curl -sf localhost:8080/health && break; sleep 1; done
+          curl -sf -D headers -o tile.mvt localhost:8080/13/4897/3332
+          grep -qi '^content-type: application/vnd.mapbox-vector-tile' headers
+          test "$(stat -c %s tile.mvt)" -gt 100
+          start=$(date +%s)
+          docker stop dcs
+          test $(( $(date +%s) - start )) -lt 5
+
+      - name: Show container logs
+        if: failure()
+        run: docker logs dcs
+
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
