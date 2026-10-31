@@ -8,7 +8,7 @@ use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
-use dem_contour_service::{router, Settings};
+use dem_contour_service::{router, Settings, DEFAULT_ATTRIBUTION};
 use geozero::mvt::tile::Value;
 use geozero::mvt::{Message, Tile};
 use http_body_util::BodyExt;
@@ -18,6 +18,7 @@ use tower::ServiceExt;
 const DEM_SIZE: u32 = 256;
 const MISSING_X: u32 = 100;
 const BROKEN_X: u32 = 200;
+const PUBLIC_URL: &str = "https://example.test/vector/data/contour";
 
 #[derive(Clone)]
 struct Dem {
@@ -73,6 +74,8 @@ async fn service() -> (Router, Arc<AtomicUsize>) {
     let settings = Settings {
         dem_url_pattern,
         cache_size: 64,
+        public_url: format!("{PUBLIC_URL}/"),
+        attribution: DEFAULT_ATTRIBUTION.to_string(),
     };
     (router(&settings), fetches)
 }
@@ -244,7 +247,61 @@ async fn unreachable_dem_is_bad_gateway() {
     let settings = Settings {
         dem_url_pattern: "http://127.0.0.1:1/{z}/{x}/{y}.png".to_string(),
         cache_size: 1,
+        public_url: PUBLIC_URL.to_string(),
+        attribution: DEFAULT_ATTRIBUTION.to_string(),
     };
     let (status, _, _) = get_response(&router(&settings), "/12/2048/2048").await;
     assert_eq!(status, StatusCode::BAD_GATEWAY);
+}
+
+async fn get_tilejson(app: &Router) -> serde_json::Value {
+    let (status, headers, body) = get_response(app, "/tilejson.json").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["content-type"], "application/json");
+    serde_json::from_slice(&body).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tilejson_describes_the_contour_tiles() {
+    let (app, fetches) = service().await;
+    let tilejson = get_tilejson(&app).await;
+    assert_eq!(tilejson["tilejson"], "3.0.0");
+    assert_eq!(tilejson["scheme"], "xyz");
+    assert_eq!(tilejson["attribution"], DEFAULT_ATTRIBUTION);
+    assert_eq!(
+        tilejson["tiles"],
+        serde_json::json!([format!("{PUBLIC_URL}/{{z}}/{{x}}/{{y}}.mvt")])
+    );
+    assert_eq!(tilejson["minzoom"], 11);
+    assert_eq!(tilejson["maxzoom"], 16);
+    let layer = &tilejson["vector_layers"][0];
+    assert_eq!(layer["id"], "contours");
+    assert_eq!(
+        layer["fields"],
+        serde_json::json!({"ele": "Number", "level": "Number"})
+    );
+    assert_eq!(layer["minzoom"], 11);
+    assert_eq!(layer["maxzoom"], 16);
+    assert_eq!(fetches.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tilejson_tile_url_matches_the_tile_route() {
+    let (app, _) = service().await;
+    let tilejson = get_tilejson(&app).await;
+    let minzoom = tilejson["minzoom"].as_u64().unwrap() as u32;
+    let template = tilejson["tiles"][0].as_str().unwrap();
+    let path = template.strip_prefix(PUBLIC_URL).unwrap();
+    let uri = |z: u32| {
+        let xy = (1u32 << z) / 2;
+        path.replace("{z}", &z.to_string())
+            .replace("{x}", &xy.to_string())
+            .replace("{y}", &xy.to_string())
+    };
+    let (status, _, body) = get_response(&app, &uri(minzoom)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!contours(&body).is_empty());
+    let (status, _, body) = get_response(&app, &uri(minzoom - 1)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(contours(&body).is_empty());
 }

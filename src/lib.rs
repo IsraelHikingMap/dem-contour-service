@@ -5,16 +5,20 @@ use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
+use axum::{Json, Router};
 use maplibre_contour_rs::cache::DemCache;
 use maplibre_contour_rs::config::parse_thresholds;
 use maplibre_contour_rs::dem_source::{TileSource, UrlTemplate};
 use maplibre_contour_rs::{ContourConfig, DemManager, Encoding, Error, TileCoord};
 use serde::Deserialize;
+use serde_json::{json, Value};
 
 pub const DEFAULT_DEM_URL_PATTERN: &str =
     "https://mapeak.com/vector/data/raster-dem/{z}/{x}/{y}.webp";
 pub const DEFAULT_CACHE_SIZE: usize = 64;
+pub const DEFAULT_ATTRIBUTION: &str =
+    "<a href='https://mapterhorn.com/attribution'>© Mapterhorn</a>";
+const TILEJSON_MAX_ZOOM: u8 = 16;
 const THRESHOLDS: &str = "11*200*1000~12*10*100~13*10*100~14*10*100~15*10*100";
 const METRIC_MULTIPLIER: f32 = 1.0;
 const IMPERIAL_MULTIPLIER: f32 = 3.28084;
@@ -26,6 +30,8 @@ const MVT_CONTENT_TYPE: &str = "application/vnd.mapbox-vector-tile";
 pub struct Settings {
     pub dem_url_pattern: String,
     pub cache_size: usize,
+    pub public_url: String,
+    pub attribution: String,
 }
 
 struct HttpSource {
@@ -91,6 +97,27 @@ fn manager(
     DemManager::new(source, contour_config(dem_url_pattern, multiplier)).with_cache(cache.clone())
 }
 
+fn tilejson(settings: &Settings, config: &ContourConfig) -> Value {
+    let minzoom = config.thresholds.iter().map(|r| r.zoom).min().unwrap_or(0);
+    let public_url = settings.public_url.trim_end_matches('/');
+    json!({
+        "tilejson": "3.0.0",
+        "name": "contour",
+        "attribution": settings.attribution,
+        "scheme": "xyz",
+        "tiles": [format!("{public_url}/{{z}}/{{x}}/{{y}}.mvt")],
+        "bounds": [-180, -85.051129, 180, 85.051129],
+        "minzoom": minzoom,
+        "maxzoom": TILEJSON_MAX_ZOOM,
+        "vector_layers": [{
+            "id": config.layer_name,
+            "fields": { config.elevation_key.clone(): "Number", config.level_key.clone(): "Number" },
+            "minzoom": minzoom,
+            "maxzoom": TILEJSON_MAX_ZOOM,
+        }],
+    })
+}
+
 fn parse_coord(z: u8, x: u32, y: &str) -> Option<TileCoord> {
     let y = y
         .strip_suffix(".pbf")
@@ -148,8 +175,13 @@ pub fn router(settings: &Settings) -> Router {
             IMPERIAL_MULTIPLIER,
         ),
     });
+    let tilejson = Json(tilejson(
+        settings,
+        &contour_config(&settings.dem_url_pattern, METRIC_MULTIPLIER),
+    ));
     Router::new()
         .route("/{z}/{x}/{y}", get(tile))
+        .route("/tilejson.json", get(move || async move { tilejson }))
         .route("/health", get(|| async { "ok" }))
         .with_state(managers)
 }
