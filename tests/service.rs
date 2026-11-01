@@ -142,39 +142,51 @@ async fn health() {
 #[tokio::test(flavor = "multi_thread")]
 async fn below_lowest_threshold_is_empty_without_fetching() {
     let (app, fetches) = service().await;
-    let (status, _, body) = get_response(&app, "/10/512/512").await;
+    let (status, _, body) = get_response(&app, "/8/128/128").await;
     assert_eq!(status, StatusCode::OK);
     assert!(contours(&body).is_empty());
     assert_eq!(fetches.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn zoom_11_uses_200_and_1000_meters() {
+async fn tile_headers() {
     let (app, _) = service().await;
-    let (status, headers, body) = get_response(&app, "/11/1024/1024").await;
+    let (status, headers, _) = get_response(&app, "/11/1024/1024").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         headers["content-type"],
         "application/vnd.mapbox-vector-tile"
     );
     assert_eq!(headers["cache-control"], "public, max-age=604800");
-    let lines = contours(&body);
-    assert!(!lines.is_empty());
-    for (ele, level) in lines {
-        assert_eq!(ele % 200.0, 0.0);
-        assert_eq!(level, (ele % 1000.0 == 0.0) as i64);
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn zoom_13_uses_10_and_100_meters() {
+async fn spacing_matches_the_style_at_each_zoom() {
     let (app, _) = service().await;
-    let (_, _, body) = get_response(&app, "/13/4096/4096").await;
-    let lines = contours(&body);
-    assert!(lines.len() > 10);
-    for (ele, level) in lines {
-        assert_eq!(ele % 10.0, 0.0);
-        assert_eq!(level, (ele % 100.0 == 0.0) as i64);
+    for (z, minor, major) in [
+        (9, 500.0, 2500.0),
+        (10, 200.0, 1000.0),
+        (11, 100.0, 500.0),
+        (12, 50.0, 250.0),
+        (13, 20.0, 100.0),
+        (14, 10.0, 50.0),
+        (16, 10.0, 50.0),
+    ] {
+        let xy = 1u32 << (z - 1);
+        let (_, _, body) = get_response(&app, &format!("/{z}/{xy}/{xy}")).await;
+        let lines = contours(&body);
+        let eles: std::collections::BTreeSet<i64> = lines.iter().map(|l| l.0 as i64).collect();
+        assert!(eles.len() > 1, "z{z}");
+        assert!(
+            eles.iter()
+                .zip(eles.iter().skip(1))
+                .any(|(a, b)| (b - a) as f64 == minor),
+            "z{z}: no adjacent lines {minor} apart in {eles:?}"
+        );
+        for (ele, level) in lines {
+            assert_eq!(ele % minor, 0.0, "z{z}");
+            assert_eq!(level, (ele % major == 0.0) as i64, "z{z} ele {ele}");
+        }
     }
 }
 
@@ -272,7 +284,7 @@ async fn tilejson_describes_the_contour_tiles() {
         tilejson["tiles"],
         serde_json::json!([format!("{PUBLIC_URL}/{{z}}/{{x}}/{{y}}.mvt")])
     );
-    assert_eq!(tilejson["minzoom"], 11);
+    assert_eq!(tilejson["minzoom"], 9);
     assert_eq!(tilejson["maxzoom"], 16);
     let layer = &tilejson["vector_layers"][0];
     assert_eq!(layer["id"], "contours");
@@ -280,7 +292,7 @@ async fn tilejson_describes_the_contour_tiles() {
         layer["fields"],
         serde_json::json!({"ele": "Number", "level": "Number"})
     );
-    assert_eq!(layer["minzoom"], 11);
+    assert_eq!(layer["minzoom"], 9);
     assert_eq!(layer["maxzoom"], 16);
     assert_eq!(fetches.load(Ordering::SeqCst), 0);
 }

@@ -2,14 +2,14 @@
 
 An HTTP service that generates contour-line vector tiles (MVT) on the fly from Terrarium raster-DEM tiles.
 
-It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs) with the same configuration as the Mapeak Android and iOS apps (`CarContourTilesProvider` in [IsraelHikingMap/Site](https://github.com/IsraelHikingMap/Site)):
+It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs) with the DEM configuration of the Mapeak Android and iOS apps (`CarContourTilesProvider` in [IsraelHikingMap/Site](https://github.com/IsraelHikingMap/Site)) and the contour spacing of the [mapeak-hike](https://github.com/IsraelHikingMap/VectorMap/blob/master/Styles/mapeak-hike.json) style:
 
 | Setting | Value |
 |---|---|
 | DEM encoding | Terrarium |
 | DEM max zoom | 11 |
 | Overzoom | 1 |
-| Thresholds | `11*200*1000~12*10*100~13*10*100~14*10*100~15*10*100` |
+| Thresholds | `9*500*2500~10*200*1000~11*100*500~12*50*250~13*20*100~14*10*50` |
 | Layer / attributes | `contours` / `ele`, `level` |
 | Multiplier | 1.0 (metric), 3.28084 (imperial) |
 
@@ -19,10 +19,10 @@ It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs)
 |---|---|
 | `GET /{z}/{x}/{y}` | Contour MVT in meters. `{y}` may end with `.pbf` or `.mvt`. |
 | `GET /{z}/{x}/{y}?units=imperial` | Contour MVT in feet. |
-| `GET /tilejson.json` | TileJSON 3.0.0 for the metric tiles, zoom 11-16, tiles at `{PUBLIC_URL}/{z}/{x}/{y}.mvt`. |
+| `GET /tilejson.json` | TileJSON 3.0.0 for the metric tiles, zoom 9-16, tiles at `{PUBLIC_URL}/{z}/{x}/{y}.mvt`. |
 | `GET /health` | `ok` |
 
-- Tiles below zoom 11 are empty.
+- Tiles below zoom 9 are empty.
 - A DEM tile answered with 404 counts as no data and yields an empty tile.
 - Other DEM failures return 502.
 - Successful tiles carry `Cache-Control: public, max-age=604800`.
