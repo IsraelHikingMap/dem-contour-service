@@ -12,4 +12,5 @@ FROM gcr.io/distroless/cc-debian13:nonroot
 COPY --from=build /src/target/release/dem-contour-service /usr/local/bin/dem-contour-service
 ENV PORT=8080
 EXPOSE 8080
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s CMD ["/usr/local/bin/dem-contour-service", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/dem-contour-service"]

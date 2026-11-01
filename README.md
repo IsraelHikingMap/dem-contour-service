@@ -23,6 +23,8 @@ It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs)
 | `GET /tilejson.json` | TileJSON 3.0.0 for the metric tiles, zoom 9-16, tiles at `{PUBLIC_URL}/{z}/{x}/{y}.mvt`. |
 | `GET /health` | `ok` |
 
+`dem-contour-service healthcheck` exits 0 when `GET /health` on `PORT` answers `ok`, and 1 otherwise. The image's `HEALTHCHECK` runs it.
+
 - Tiles below zoom 9 are empty.
 - A DEM tile answered with 404 counts as no data and yields an empty tile.
 - Other DEM failures return 502.

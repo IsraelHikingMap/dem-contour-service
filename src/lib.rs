@@ -25,6 +25,7 @@ const IMPERIAL_THRESHOLDS: &str =
 const METRIC_MULTIPLIER: f32 = 1.0;
 const IMPERIAL_MULTIPLIER: f32 = 3.28084;
 const DEM_TIMEOUT: Duration = Duration::from_secs(30);
+const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_ZOOM: u8 = 30;
 const CACHE_CONTROL: &str = "public, max-age=604800";
 const MVT_CONTENT_TYPE: &str = "application/vnd.mapbox-vector-tile";
@@ -164,6 +165,19 @@ async fn tile(
         Ok(Err(e)) => (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+pub fn healthcheck(port: &str) -> bool {
+    ureq::Agent::config_builder()
+        .proxy(None)
+        .timeout_global(Some(HEALTHCHECK_TIMEOUT))
+        .build()
+        .new_agent()
+        .get(&format!("http://127.0.0.1:{port}/health"))
+        .call()
+        .ok()
+        .and_then(|mut response| response.body_mut().read_to_string().ok())
+        .is_some_and(|body| body == "ok")
 }
 
 pub fn router(settings: &Settings) -> Router {
