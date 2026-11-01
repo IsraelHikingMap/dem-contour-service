@@ -142,9 +142,11 @@ async fn health() {
 #[tokio::test(flavor = "multi_thread")]
 async fn below_lowest_threshold_is_empty_without_fetching() {
     let (app, fetches) = service().await;
-    let (status, _, body) = get_response(&app, "/8/128/128").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(contours(&body).is_empty());
+    for uri in ["/8/128/128", "/8/128/128?units=imperial"] {
+        let (status, _, body) = get_response(&app, uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(contours(&body).is_empty(), "{uri}");
+    }
     assert_eq!(fetches.load(Ordering::SeqCst), 0);
 }
 
@@ -161,19 +163,44 @@ async fn tile_headers() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn spacing_matches_the_style_at_each_zoom() {
+async fn metric_spacing_matches_the_style_at_each_zoom() {
+    assert_spacing(
+        "",
+        &[
+            (9, 500.0, 2500.0),
+            (10, 200.0, 1000.0),
+            (11, 100.0, 500.0),
+            (12, 50.0, 250.0),
+            (13, 20.0, 100.0),
+            (14, 10.0, 50.0),
+            (16, 10.0, 50.0),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn imperial_spacing_follows_usgs_intervals_at_each_zoom() {
+    assert_spacing(
+        "?units=imperial",
+        &[
+            (9, 1000.0, 5000.0),
+            (10, 500.0, 2500.0),
+            (11, 200.0, 1000.0),
+            (12, 100.0, 500.0),
+            (13, 40.0, 200.0),
+            (14, 20.0, 100.0),
+            (16, 20.0, 100.0),
+        ],
+    )
+    .await;
+}
+
+async fn assert_spacing(query: &str, spacing: &[(u8, f64, f64)]) {
     let (app, _) = service().await;
-    for (z, minor, major) in [
-        (9, 500.0, 2500.0),
-        (10, 200.0, 1000.0),
-        (11, 100.0, 500.0),
-        (12, 50.0, 250.0),
-        (13, 20.0, 100.0),
-        (14, 10.0, 50.0),
-        (16, 10.0, 50.0),
-    ] {
+    for &(z, minor, major) in spacing {
         let xy = 1u32 << (z - 1);
-        let (_, _, body) = get_response(&app, &format!("/{z}/{xy}/{xy}")).await;
+        let (_, _, body) = get_response(&app, &format!("/{z}/{xy}/{xy}{query}")).await;
         let lines = contours(&body);
         let eles: std::collections::BTreeSet<i64> = lines.iter().map(|l| l.0 as i64).collect();
         assert!(eles.len() > 1, "z{z}");
@@ -198,8 +225,7 @@ async fn imperial_multiplies_elevation() {
     let metric = contours(&metric);
     let imperial = contours(&imperial);
     let max = |lines: &[(f64, i64)]| lines.iter().map(|l| l.0).fold(f64::MIN, f64::max);
-    assert!(imperial.len() > 3 * metric.len() - 10);
-    assert!((max(&imperial) / max(&metric) - 3.28084).abs() < 0.05);
+    assert!((max(&imperial) - 3.28084 * max(&metric)).abs() <= 40.0 + 20.0 * 3.28084);
 }
 
 #[tokio::test(flavor = "multi_thread")]
