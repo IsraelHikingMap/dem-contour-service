@@ -1,5 +1,5 @@
 use dem_contour_service::{
-    router, Settings, DEFAULT_ATTRIBUTION, DEFAULT_CACHE_SIZE, DEFAULT_DEM_URL_PATTERN,
+    healthcheck, router, Settings, DEFAULT_ATTRIBUTION, DEFAULT_CACHE_SIZE, DEFAULT_DEM_URL_PATTERN,
 };
 use tokio::signal::unix::{signal, SignalKind};
 
@@ -14,6 +14,9 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        std::process::exit(if healthcheck(&port) { 0 } else { 1 });
+    }
     let settings = Settings {
         dem_url_pattern: std::env::var("DEM_URL_PATTERN")
             .unwrap_or_else(|_| DEFAULT_DEM_URL_PATTERN.to_string()),
