@@ -9,7 +9,8 @@ It uses [maplibre-contour-rs](https://github.com/mapeak-com/maplibre-contour-rs)
 | DEM encoding | Terrarium |
 | DEM max zoom | 11 |
 | Overzoom | 1 |
-| Thresholds | `9*500*2500~10*200*1000~11*100*500~12*50*250~13*20*100~14*10*50` |
+| Thresholds (metric) | `9*500*2500~10*200*1000~11*100*500~12*50*250~13*20*100~14*10*50` |
+| Thresholds (imperial, feet) | `9*1000*5000~10*500*2500~11*200*1000~12*100*500~13*40*200~14*20*100`, based on USGS contour intervals |
 | Layer / attributes | `contours` / `ele`, `level` |
 | Multiplier | 1.0 (metric), 3.28084 (imperial) |
 

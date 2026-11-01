@@ -19,7 +19,9 @@ pub const DEFAULT_CACHE_SIZE: usize = 64;
 pub const DEFAULT_ATTRIBUTION: &str =
     "<a href='https://mapterhorn.com/attribution'>© Mapterhorn</a>";
 const TILEJSON_MAX_ZOOM: u8 = 16;
-const THRESHOLDS: &str = "9*500*2500~10*200*1000~11*100*500~12*50*250~13*20*100~14*10*50";
+const METRIC_THRESHOLDS: &str = "9*500*2500~10*200*1000~11*100*500~12*50*250~13*20*100~14*10*50";
+const IMPERIAL_THRESHOLDS: &str =
+    "9*1000*5000~10*500*2500~11*200*1000~12*100*500~13*40*200~14*20*100";
 const METRIC_MULTIPLIER: f32 = 1.0;
 const IMPERIAL_MULTIPLIER: f32 = 3.28084;
 const DEM_TIMEOUT: Duration = Duration::from_secs(30);
@@ -69,13 +71,13 @@ struct TileQuery {
     units: Option<String>,
 }
 
-fn contour_config(dem_url_pattern: &str, multiplier: f32) -> ContourConfig {
+fn contour_config(dem_url_pattern: &str, multiplier: f32, thresholds: &str) -> ContourConfig {
     ContourConfig {
         encoding: Encoding::Terrarium,
         dem_url_pattern: dem_url_pattern.to_string(),
         dem_max_zoom: 11,
         overzoom: 1,
-        thresholds: parse_thresholds(THRESHOLDS),
+        thresholds: parse_thresholds(thresholds),
         multiplier,
         layer_name: "contours".to_string(),
         elevation_key: "ele".to_string(),
@@ -89,12 +91,17 @@ fn manager(
     cache: &DemCache,
     dem_url_pattern: &str,
     multiplier: f32,
+    thresholds: &str,
 ) -> DemManager<HttpSource> {
     let source = HttpSource {
         agent: agent.clone(),
         template: UrlTemplate::new(dem_url_pattern),
     };
-    DemManager::new(source, contour_config(dem_url_pattern, multiplier)).with_cache(cache.clone())
+    DemManager::new(
+        source,
+        contour_config(dem_url_pattern, multiplier, thresholds),
+    )
+    .with_cache(cache.clone())
 }
 
 fn tilejson(settings: &Settings, config: &ContourConfig) -> Value {
@@ -167,17 +174,28 @@ pub fn router(settings: &Settings) -> Router {
         .new_agent();
     let cache = DemCache::new(settings.cache_size);
     let managers = Arc::new(Managers {
-        metric: manager(&agent, &cache, &settings.dem_url_pattern, METRIC_MULTIPLIER),
+        metric: manager(
+            &agent,
+            &cache,
+            &settings.dem_url_pattern,
+            METRIC_MULTIPLIER,
+            METRIC_THRESHOLDS,
+        ),
         imperial: manager(
             &agent,
             &cache,
             &settings.dem_url_pattern,
             IMPERIAL_MULTIPLIER,
+            IMPERIAL_THRESHOLDS,
         ),
     });
     let tilejson = Json(tilejson(
         settings,
-        &contour_config(&settings.dem_url_pattern, METRIC_MULTIPLIER),
+        &contour_config(
+            &settings.dem_url_pattern,
+            METRIC_MULTIPLIER,
+            METRIC_THRESHOLDS,
+        ),
     ));
     Router::new()
         .route("/{z}/{x}/{y}", get(tile))
